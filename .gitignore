@@ -1,0 +1,14 @@
+# Model directories
+sherpa-onnx-*/
+vosk-model-*/
+
+# Python related
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+
+# Miscelaneous
+transcriptions.txt
