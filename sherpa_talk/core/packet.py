@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 
-@dataclass
+@dataclass(frozen=True)
 class TextEvent:
     """A finalized or partial transcript sent from one peer to another."""
 

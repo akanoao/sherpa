@@ -127,12 +127,15 @@ class WebSocketClient(TransportBase):
                 logger.warning("Failed to parse incoming message: %s", exc)
 
     async def _send_loop(self, ws) -> None:
+        payload: str | None = None
         while self._running:
             try:
-                payload = await asyncio.wait_for(self._send_queue.get(), timeout=0.5)
+                if payload is None:
+                    payload = await asyncio.wait_for(self._send_queue.get(), timeout=0.5)
                 await ws.send(payload)
+                payload = None  # sent successfully; clear the buffer
             except asyncio.TimeoutError:
                 continue
             except Exception:
-                # Put the message back so it can be sent after reconnect
+                # Keep payload in the buffer so it will be (re)sent after reconnect
                 break

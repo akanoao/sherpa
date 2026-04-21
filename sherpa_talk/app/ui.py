@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-@dataclass
+@dataclass(frozen=True)
 class ConversationEntry:
     """A single conversation turn stored in the scrollback history."""
 

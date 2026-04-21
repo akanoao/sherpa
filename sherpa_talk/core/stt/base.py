@@ -18,7 +18,7 @@ class TranscriptType(Enum):
     FINAL = "final"
 
 
-@dataclass
+@dataclass(frozen=True)
 class TranscriptEvent:
     """Emitted by an STTProvider whenever new transcript text is available."""
 

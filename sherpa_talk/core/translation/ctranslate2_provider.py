@@ -161,17 +161,26 @@ class CTranslate2TranslationProvider:
     # Internal helpers – translation
     # ------------------------------------------------------------------
 
+    def _intra_threads_arg(self) -> Optional[int]:
+        """Return the intra_threads value to pass to CTranslate2, or None to use the default."""
+        return self._intra_threads if self._intra_threads > 0 else None
+
+    def _make_translator(self, model_dir: str):
+        """Create a CTranslate2 Translator instance (shared helper)."""
+        import ctranslate2
+
+        return ctranslate2.Translator(
+            model_dir,
+            device=self._device,
+            inter_threads=self._inter_threads,
+            intra_threads=self._intra_threads_arg(),
+        )
+
     def _load_marian(self, model_dir: str):
         if model_dir not in self._translators:
-            import ctranslate2
             from transformers import MarianTokenizer
 
-            translator = ctranslate2.Translator(
-                model_dir,
-                device=self._device,
-                inter_threads=self._inter_threads,
-                intra_threads=self._intra_threads if self._intra_threads > 0 else None,
-            )
+            translator = self._make_translator(model_dir)
             tokenizer = MarianTokenizer.from_pretrained(model_dir)
             self._translators[model_dir] = translator
             self._tokenizers[model_dir] = tokenizer
@@ -179,15 +188,9 @@ class CTranslate2TranslationProvider:
 
     def _load_nllb(self, model_dir: str):
         if model_dir not in self._translators:
-            import ctranslate2
             from transformers import NllbTokenizer
 
-            translator = ctranslate2.Translator(
-                model_dir,
-                device=self._device,
-                inter_threads=self._inter_threads,
-                intra_threads=self._intra_threads if self._intra_threads > 0 else None,
-            )
+            translator = self._make_translator(model_dir)
             tokenizer = NllbTokenizer.from_pretrained(model_dir)
             self._translators[model_dir] = translator
             self._tokenizers[model_dir] = tokenizer

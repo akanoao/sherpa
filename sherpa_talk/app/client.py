@@ -92,8 +92,10 @@ class SherpaClient:
         self._ui = TerminalUI(speaker_id, show_original=show_original)
         self._transport = WebSocketClient(server_uri)
 
-        # Ordered TTS queue – keeps audio playback in sequence.
-        self._tts_queue: queue.Queue = queue.Queue()
+        # Inbound work queue: holds raw TextEvents from the network.
+        # Translation and TTS are performed in the worker thread so the
+        # asyncio recv loop is never blocked by CPU-bound inference.
+        self._inbound_queue: queue.Queue = queue.Queue()
 
         # Will be set to the running event loop in run().
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -107,9 +109,9 @@ class SherpaClient:
         self._loop = asyncio.get_running_loop()
         self._running = True
 
-        # TTS worker (daemon thread so it dies with the process)
-        tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
-        tts_thread.start()
+        # Inbound worker thread: translation + TTS (blocks on CPU-bound inference)
+        inbound_thread = threading.Thread(target=self._inbound_worker, daemon=True)
+        inbound_thread.start()
 
         # STT – runs in its own daemon thread (sounddevice blocking loop)
         stt = self._mm.get_stt_provider(self._input_lang)
@@ -189,66 +191,68 @@ class SherpaClient:
         Called from the asyncio event loop (via the websocket recv loop)
         whenever a TextEvent arrives from the remote peer.
 
-        This method must not block for long because it runs inline in the
-        recv loop.  Heavy work (translation, TTS) is dispatched to the
-        dedicated TTS worker thread.
+        This method must return quickly – it only shows the untranslated
+        text and enqueues the event for the inbound worker thread.
         """
-        # Show the original (untranslated) text immediately
+        # Show the original (untranslated) text immediately – no blocking work here
         self._ui.show_remote_original(event.speaker_id, event.text, event.source_lang)
 
-        # Translate
-        if event.source_lang != self._output_lang:
-            try:
-                translator = self._mm.get_translation_provider()
-                translated = translator.translate(
-                    event.text, event.source_lang, self._output_lang
-                )
-            except Exception as exc:
-                logger.error("Translation error: %s", exc)
-                translated = event.text
-        else:
-            translated = event.text
-
-        self._ui.show_remote_translated(event.speaker_id, translated, self._output_lang)
-
-        # Record in history
-        self._ui.record(
-            ConversationEntry(
-                speaker_id=event.speaker_id,
-                original_text=event.text,
-                translated_text=translated,
-                source_lang=event.source_lang,
-                target_lang=self._output_lang,
-                timestamp=event.timestamp,
-                is_mine=False,
-            )
-        )
-
-        # Queue for TTS playback
-        if self._tts_enabled:
-            self._tts_queue.put_nowait((translated, self._output_lang))
+        # Dispatch all CPU-bound work (translation + TTS) to the worker thread
+        self._inbound_queue.put_nowait(event)
 
     # ------------------------------------------------------------------
-    # TTS worker (runs in a dedicated thread)
+    # Inbound worker thread: translation + TTS
     # ------------------------------------------------------------------
 
-    def _tts_worker(self) -> None:
+    def _inbound_worker(self) -> None:
         """
-        Consume the TTS queue sequentially so that audio clips play one
-        after another without overlapping.
+        Process inbound TextEvents sequentially: translate then speak.
+
+        Runs in a dedicated daemon thread so that CPU-bound translation
+        inference and blocking TTS playback never stall the asyncio loop.
         """
         while self._running:
             try:
-                text, lang = self._tts_queue.get(timeout=0.5)
+                event: TextEvent = self._inbound_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
 
-            if not self._mm.has_tts(lang):
-                logger.debug("No TTS configured for language %r; skipping.", lang)
-                continue
+            # Translate
+            if event.source_lang != self._output_lang:
+                try:
+                    translator = self._mm.get_translation_provider()
+                    translated = translator.translate(
+                        event.text, event.source_lang, self._output_lang
+                    )
+                except Exception as exc:
+                    logger.error("Translation error: %s", exc)
+                    translated = event.text
+            else:
+                translated = event.text
 
-            try:
-                tts = self._mm.get_tts_provider(lang)
-                tts.speak(text, lang=lang, speed=self._tts_speed)
-            except Exception as exc:
-                logger.error("TTS playback error: %s", exc)
+            self._ui.show_remote_translated(event.speaker_id, translated, self._output_lang)
+
+            # Record in history
+            self._ui.record(
+                ConversationEntry(
+                    speaker_id=event.speaker_id,
+                    original_text=event.text,
+                    translated_text=translated,
+                    source_lang=event.source_lang,
+                    target_lang=self._output_lang,
+                    timestamp=event.timestamp,
+                    is_mine=False,
+                )
+            )
+
+            # TTS playback
+            if self._tts_enabled and translated:
+                lang = self._output_lang
+                if not self._mm.has_tts(lang):
+                    logger.debug("No TTS configured for language %r; skipping.", lang)
+                    continue
+                try:
+                    tts = self._mm.get_tts_provider(lang)
+                    tts.speak(translated, lang=lang, speed=self._tts_speed)
+                except Exception as exc:
+                    logger.error("TTS playback error: %s", exc)
