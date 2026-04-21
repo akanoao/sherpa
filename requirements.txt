@@ -1,3 +1,23 @@
-sounddevice
-sherpa-onnx
-numpy
+# ── Core audio / ASR ────────────────────────────────────────────────────────
+sounddevice          # cross-platform microphone / speaker I/O
+sherpa-onnx          # Sherpa-ONNX STT (Zipformer, Paraformer) + VITS TTS
+numpy                # audio sample arrays
+
+# ── Vosk STT (for Hindi, Japanese, …) ────────────────────────────────────────
+vosk                 # offline STT; models from https://alphacephei.com/vosk/models
+
+# ── Transport ────────────────────────────────────────────────────────────────
+websockets           # async WebSocket client + server
+
+# ── Translation – MVP (easiest offline setup) ────────────────────────────────
+argostranslate       # fully offline translation; install language pairs with
+                     #   python main.py install-lang --from en --to hi
+
+# ── Translation – Production (CTranslate2 + MarianMT / NLLB) ────────────────
+# Uncomment the lines below when you want the faster CTranslate2 engine.
+# You will also need to convert the HuggingFace models to CTranslate2 format
+# (see config.example.json and README.md for instructions).
+#
+# ctranslate2        # fast CT2 inference runtime
+# transformers       # HuggingFace tokenizers for MarianMT / NLLB
+# sentencepiece      # tokenisation for NLLB

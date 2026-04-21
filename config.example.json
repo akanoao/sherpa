@@ -1,0 +1,93 @@
+{
+  "_comment": "SherpaConnect configuration. Copy this file to config.json and adjust paths.",
+
+  "stt": {
+    "_comment_stt": "Add one entry per language you intend to SPEAK. Key = BCP-47 language code.",
+
+    "en": {
+      "engine": "sherpa_onnx",
+      "model_type": "transducer",
+      "tokens":  "./models/sherpa-onnx-streaming-zipformer-en-2023-06-21/tokens.txt",
+      "encoder": "./models/sherpa-onnx-streaming-zipformer-en-2023-06-21/encoder-epoch-99-avg-1.onnx",
+      "decoder": "./models/sherpa-onnx-streaming-zipformer-en-2023-06-21/decoder-epoch-99-avg-1.onnx",
+      "joiner":  "./models/sherpa-onnx-streaming-zipformer-en-2023-06-21/joiner-epoch-99-avg-1.onnx",
+      "provider": "cpu",
+      "num_threads": 2,
+      "decoding_method": "greedy_search",
+      "input_sample_rate": 48000,
+      "rule1_min_trailing_silence": 2.4,
+      "rule2_min_trailing_silence": 1.2
+    },
+
+    "zh": {
+      "engine": "sherpa_onnx",
+      "model_type": "paraformer",
+      "tokens":  "./models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tokens.txt",
+      "encoder": "./models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx",
+      "decoder": "./models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx",
+      "provider": "cpu",
+      "num_threads": 2,
+      "input_sample_rate": 48000
+    },
+
+    "hi": {
+      "engine": "vosk",
+      "model_dir": "./models/vosk-model-small-hi-0.22",
+      "sample_rate": 16000
+    },
+
+    "ja": {
+      "engine": "vosk",
+      "model_dir": "./models/vosk-model-ja-0.22",
+      "sample_rate": 16000
+    }
+  },
+
+  "tts": {
+    "_comment_tts": "Add one entry per language you want to HEAR. Key = BCP-47 language code.",
+    "_comment_models": "Download VITS models from https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models",
+
+    "en": {
+      "engine": "sherpa_onnx",
+      "model":   "./models/vits-ljspeech/vits-ljspeech.onnx",
+      "tokens":  "./models/vits-ljspeech/tokens.txt",
+      "data_dir": "",
+      "speaker_id": 0,
+      "provider": "cpu",
+      "num_threads": 2
+    },
+
+    "hi": {
+      "engine": "sherpa_onnx",
+      "model":   "./models/vits-mms-hi/model.onnx",
+      "tokens":  "./models/vits-mms-hi/tokens.txt",
+      "data_dir": "",
+      "speaker_id": 0,
+      "provider": "cpu",
+      "num_threads": 2
+    },
+
+    "zh": {
+      "engine": "sherpa_onnx",
+      "model":   "./models/vits-zh-hf-fanchen-C/vits-zh-hf-fanchen-C.onnx",
+      "tokens":  "./models/vits-zh-hf-fanchen-C/tokens.txt",
+      "data_dir": "",
+      "speaker_id": 0,
+      "provider": "cpu",
+      "num_threads": 2
+    }
+  },
+
+  "translation": {
+    "_comment": "engine: 'argos' (easiest, pip install argostranslate) or 'ctranslate2' (faster, needs model conversion).",
+
+    "engine": "argos",
+
+    "_comment_ctranslate2": "Used only when engine = 'ctranslate2'",
+    "models_dir": "./models/ct2",
+    "device": "cpu",
+    "inter_threads": 1,
+    "pivot_lang": "en",
+    "nllb_dir": "nllb-200-distilled-600M"
+  }
+}
