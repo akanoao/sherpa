@@ -9,6 +9,17 @@ vosk                 # offline STT; models from https://alphacephei.com/vosk/mod
 # ── Transport ────────────────────────────────────────────────────────────────
 websockets           # async WebSocket client + server
 
+# ── WebRTC & Media & UI ──────────────────────────────────────────────────────
+aiortc               # WebRTC peer-to-peer transport
+av                   # Audio/Video frame processing for WebRTC
+opencv-python        # Video UI display
+Pillow               # Text rendering for OpenCV (supports Hindi/Unicode)
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+requests             # Downloading models
+tqdm                 # Progress bars for downloads
+huggingface_hub      # Downloading translation models (NLLB)
+
 # ── Translation – MVP (easiest offline setup) ────────────────────────────────
 argostranslate       # fully offline translation; install language pairs with
                      #   python main.py install-lang --from en --to hi
