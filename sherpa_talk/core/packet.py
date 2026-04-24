@@ -14,6 +14,37 @@ from typing import Optional
 
 
 @dataclass(frozen=True)
+class SignalingEvent:
+    """A WebRTC signaling packet for SDP and ICE candidates."""
+
+    speaker_id: str
+    session_id: str
+    payload_type: str  # "offer", "answer", "ice"
+    sdp: Optional[str] = None
+    candidate: Optional[dict] = None
+
+    # ------------------------------------------------------------------
+    # Serialisation helpers
+    # ------------------------------------------------------------------
+
+    def to_json(self) -> str:
+        # Tag the JSON so the receiver knows it's signaling, not text
+        data = asdict(self)
+        data["packet_type"] = "signaling"
+        return json.dumps(data)
+
+    @classmethod
+    def from_json(cls, data: dict) -> "SignalingEvent":
+        return cls(
+            speaker_id=data.get("speaker_id", ""),
+            session_id=data.get("session_id", ""),
+            payload_type=data.get("payload_type", ""),
+            sdp=data.get("sdp"),
+            candidate=data.get("candidate"),
+        )
+
+
+@dataclass(frozen=True)
 class TextEvent:
     """A finalized or partial transcript sent from one peer to another."""
 
@@ -31,11 +62,14 @@ class TextEvent:
     # ------------------------------------------------------------------
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self))
+        data = asdict(self)
+        data["packet_type"] = "text"
+        return json.dumps(data)
 
     @classmethod
     def from_json(cls, data: str) -> "TextEvent":
         d = json.loads(data)
+        d.pop("packet_type", None)
         return cls(**d)
 
     # ------------------------------------------------------------------

@@ -22,6 +22,7 @@ num_threads  : int  (default 1)
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 
@@ -72,10 +73,11 @@ class SherpaOnnxTTSProvider:
             ) from exc
 
         cfg = self._config
+        model_path, tokens_path = self._resolve_model_and_tokens(cfg)
 
         vits_model = sherpa_onnx.OfflineTtsVitsModelConfig(
-            model=cfg["model"],
-            tokens=cfg["tokens"],
+            model=model_path,
+            tokens=tokens_path,
             data_dir=cfg.get("data_dir", ""),
             lexicon=cfg.get("lexicon", ""),
             noise_scale=cfg.get("noise_scale", 0.667),
@@ -96,3 +98,48 @@ class SherpaOnnxTTSProvider:
         )
 
         return sherpa_onnx.OfflineTts(tts_config)
+
+    def _resolve_model_and_tokens(self, cfg: dict) -> tuple[str, str]:
+        model_path = Path(cfg["model"]).expanduser()
+        tokens_path = Path(cfg["tokens"]).expanduser()
+
+        if not tokens_path.is_file():
+            raise FileNotFoundError(
+                f"TTS tokens file not found: {tokens_path}. "
+                "Update config.json -> tts.<lang>.tokens"
+            )
+
+        if not model_path.is_file():
+            inferred_model = self._find_onnx_near(tokens_path)
+            if inferred_model is None:
+                raise FileNotFoundError(
+                    f"TTS model file not found: {model_path}. "
+                    "No .onnx model found in the same directory as tokens.txt. "
+                    "Update config.json -> tts.<lang>.model"
+                )
+            logger.warning(
+                "Configured TTS model %s was not found. Falling back to discovered model %s",
+                model_path,
+                inferred_model,
+            )
+            model_path = inferred_model
+
+        if model_path.suffix.lower() != ".onnx":
+            raise ValueError(
+                f"TTS model must be an .onnx file, got: {model_path}. "
+                "Update config.json -> tts.<lang>.model"
+            )
+
+        return str(model_path), str(tokens_path)
+
+    def _find_onnx_near(self, tokens_path: Path) -> Path | None:
+        base_dir = tokens_path.parent
+        candidates = sorted(base_dir.glob("*.onnx"))
+        if not candidates:
+            return None
+
+        preferred = base_dir / "model.onnx"
+        if preferred in candidates:
+            return preferred
+
+        return candidates[0]

@@ -50,6 +50,9 @@ class ArgosTranslationProvider:
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         if not text.strip() or source_lang == target_lang:
             return text
+            
+        # Normalize text to sentence-case to prevent tokenization issues with ALL CAPS input
+        text = text.capitalize()
 
         import argostranslate.translate
 

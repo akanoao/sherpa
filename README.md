@@ -2,9 +2,9 @@
 
 Real-time, fully-offline, multilingual two-way voice communication.
 
-> **Core idea:** each side does local Speech-to-Text, sends only *text* over the
+> **Core idea:** each side does local Speech-to-Text, sends only _text_ over the
 > network, and the receiver translates the text locally before playing it back
-> through a local Text-to-Speech engine.  Raw audio never leaves the device.
+> through a local Text-to-Speech engine. Raw audio never leaves the device.
 
 ```
 ┌──────────────── Speaker A  (e.g. speaks English) ──────────────────┐
@@ -81,6 +81,7 @@ sudo apt-get install libportaudio2
 ### 1. Download models
 
 #### STT — English (Sherpa-ONNX Zipformer)
+
 ```bash
 mkdir -p models && cd models
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2
@@ -88,30 +89,35 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2
 ```
 
 #### STT — Hindi (Vosk small)
+
 ```bash
 wget https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip
 unzip vosk-model-small-hi-0.22.zip
 ```
 
 #### TTS — English (VITS LJSpeech)
+
 ```bash
-wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-ljspeech.tar.bz2
-tar xf vits-ljspeech.tar.bz2
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-icefall-en_US-ljspeech-medium.tar.bz2
+tar xf vits-icefall-en_US-ljspeech-medium.tar.bz2
 ```
 
 #### TTS — Hindi (VITS MMS)
+
 ```bash
-wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-mms-hin.tar.bz2
-tar xf vits-mms-hin.tar.bz2
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-priyamvada-medium.tar.bz2
+tar xf vits-piper-hi_IN-priyamvada-medium.tar.bz2
 ```
 
 ### 2. Configure
+
 ```bash
 cp config.example.json config.json
 # Edit config.json to adjust model paths for your setup.
 ```
 
 ### 3. Install translation language pair
+
 ```bash
 # Install the en → hi and hi → en packages (one-time, ~50 MB each)
 python main.py install-lang --from en --to hi
@@ -119,6 +125,7 @@ python main.py install-lang --from hi --to en
 ```
 
 ### 4. Start the relay server (on one of the machines, or a VPS)
+
 ```bash
 python main.py serve --port 8765
 ```
@@ -126,6 +133,7 @@ python main.py serve --port 8765
 ### 5. Start the clients
 
 **Machine A** (Alice speaks English, wants Hindi):
+
 ```bash
 python main.py talk \
   --input-lang en \
@@ -135,6 +143,7 @@ python main.py talk \
 ```
 
 **Machine B** (Bob speaks Hindi, wants English):
+
 ```bash
 python main.py talk \
   --input-lang hi \
@@ -175,7 +184,8 @@ python main.py list-langs
 ## Translation Engines
 
 ### Argos Translate (default, easiest)
-Fully offline, no model conversion needed.  Language packages are ~50 MB each
+
+Fully offline, no model conversion needed. Language packages are ~50 MB each
 and are downloaded once with `install-lang`.
 
 ```json
@@ -183,6 +193,7 @@ and are downloaded once with `install-lang`.
 ```
 
 ### CTranslate2 + MarianMT / NLLB (faster, production)
+
 For heavy use or larger models, convert HuggingFace weights to CTranslate2 INT8:
 
 ```bash
@@ -218,24 +229,24 @@ Then set `"engine": "ctranslate2"` and `"models_dir": "./models/ct2"` in
 
 ## Privacy & Security
 
-* Raw audio is processed **entirely locally** – only transcribed text leaves
+- Raw audio is processed **entirely locally** – only transcribed text leaves
   the device.
-* The relay server never stores any messages; it only forwards them in real
+- The relay server never stores any messages; it only forwards them in real
   time.
-* For end-to-end encrypted transport, place the relay server behind a TLS
+- For end-to-end encrypted transport, place the relay server behind a TLS
   reverse proxy (nginx, Caddy) and use a `wss://` URI.
 
 ---
 
 ## Supported STT Models
 
-| Language | Engine | Model |
-|----------|--------|-------|
-| English  | Sherpa-ONNX | [Zipformer EN 2023-06-21](https://github.com/k2-fsa/sherpa-onnx/releases) |
-| Chinese/English | Sherpa-ONNX | [Paraformer bilingual](https://github.com/k2-fsa/sherpa-onnx/releases) |
-| Hindi | Vosk | [vosk-model-small-hi-0.22](https://alphacephei.com/vosk/models) |
-| Japanese | Vosk | [vosk-model-ja-0.22](https://alphacephei.com/vosk/models) |
-| Many others | Vosk / Sherpa-ONNX | See respective model pages |
+| Language        | Engine             | Model                                                                     |
+| --------------- | ------------------ | ------------------------------------------------------------------------- |
+| English         | Sherpa-ONNX        | [Zipformer EN 2023-06-21](https://github.com/k2-fsa/sherpa-onnx/releases) |
+| Chinese/English | Sherpa-ONNX        | [Paraformer bilingual](https://github.com/k2-fsa/sherpa-onnx/releases)    |
+| Hindi           | Vosk               | [vosk-model-small-hi-0.22](https://alphacephei.com/vosk/models)           |
+| Japanese        | Vosk               | [vosk-model-ja-0.22](https://alphacephei.com/vosk/models)                 |
+| Many others     | Vosk / Sherpa-ONNX | See respective model pages                                                |
 
 ## Supported TTS Models
 

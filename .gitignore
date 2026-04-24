@@ -1,4 +1,5 @@
 # Model directories
+models/
 sherpa-onnx-*/
 vosk-model-*/
 

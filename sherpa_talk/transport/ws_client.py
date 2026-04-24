@@ -11,11 +11,12 @@ synchronous STT thread can enqueue messages without blocking.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Optional
 
-from .base import MessageCallback, TransportBase
-from ..core.packet import TextEvent
+from .base import MessageCallback, SignalingCallback, TransportBase
+from ..core.packet import TextEvent, SignalingEvent
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class WebSocketClient(TransportBase):
     def __init__(self, uri: str) -> None:
         self._uri = uri
         self._on_message: Optional[MessageCallback] = None
+        self._on_signaling: Optional[SignalingCallback] = None
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._running = False
         self._ws = None
@@ -42,11 +44,11 @@ class WebSocketClient(TransportBase):
     # TransportBase interface
     # ------------------------------------------------------------------
 
-    async def send(self, event: TextEvent) -> None:
+    async def send(self, event) -> None:
         """Enqueue *event* for delivery.  Thread-safe via asyncio Queue."""
         await self._send_queue.put(event.to_json())
 
-    def send_nowait(self, event: TextEvent) -> None:
+    def send_nowait(self, event) -> None:
         """
         Enqueue *event* without awaiting.
 
@@ -55,7 +57,7 @@ class WebSocketClient(TransportBase):
         """
         self._send_queue.put_nowait(event.to_json())
 
-    async def connect(self, on_message: MessageCallback) -> None:
+    async def connect(self, on_message: MessageCallback, on_signaling: Optional[SignalingCallback] = None) -> None:
         """Connect and process messages until ``disconnect()`` is called."""
         try:
             import websockets
@@ -65,6 +67,7 @@ class WebSocketClient(TransportBase):
             ) from exc
 
         self._on_message = on_message
+        self._on_signaling = on_signaling
         self._running = True
         attempts = 0
 
@@ -120,9 +123,14 @@ class WebSocketClient(TransportBase):
     async def _recv_loop(self, ws) -> None:
         async for raw_message in ws:
             try:
-                event = TextEvent.from_json(raw_message)
-                if self._on_message:
-                    self._on_message(event)
+                data = json.loads(raw_message)
+                if data.get("packet_type") == "signaling":
+                    if self._on_signaling:
+                        self._on_signaling(SignalingEvent.from_json(data))
+                else:
+                    event = TextEvent.from_json(raw_message)
+                    if self._on_message:
+                        self._on_message(event)
             except Exception as exc:
                 logger.warning("Failed to parse incoming message: %s", exc)
 

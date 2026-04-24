@@ -32,10 +32,12 @@ import time
 from typing import Optional
 
 from ..core.model_manager import ModelManager
-from ..core.packet import TextEvent
+from ..core.packet import TextEvent, SignalingEvent
 from ..core.stt.base import TranscriptEvent, TranscriptType
 from ..transport.ws_client import WebSocketClient
+from ..transport.webrtc_manager import WebRTCEngine
 from .ui import ConversationEntry, TerminalUI
+from .media import CameraVideoStreamTrack, MicrophoneAudioTrack, VideoUI, AudioReceiver
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,7 @@ class SherpaClient:
         tts_enabled: bool = True,
         show_original: bool = True,
         tts_speed: float = 1.0,
+        initiate_call: bool = False,
     ) -> None:
         self._mm = model_manager
         self._speaker_id = speaker_id
@@ -85,12 +88,19 @@ class SherpaClient:
         self._output_lang = output_lang
         self._tts_enabled = tts_enabled
         self._tts_speed = tts_speed
+        self._initiate_call = initiate_call
 
         self._seq_id = 0
         self._running = False
 
         self._ui = TerminalUI(speaker_id, show_original=show_original)
         self._transport = WebSocketClient(server_uri)
+        self._webrtc: Optional[WebRTCEngine] = None
+        
+        # Initialize Media Handlers
+        self._video_ui = VideoUI(window_name=f"SherpaConnect - {speaker_id}")
+        self._audio_receiver = AudioReceiver()
+        self._audio_receiver.set_mute(self._tts_enabled)
 
         # Inbound work queue: holds raw TextEvents from the network.
         # Translation and TTS are performed in the worker thread so the
@@ -109,6 +119,19 @@ class SherpaClient:
         self._loop = asyncio.get_running_loop()
         self._running = True
 
+        # Initialize WebRTC Engine
+        self._webrtc = WebRTCEngine(
+            speaker_id=self._speaker_id,
+            session_id=self._session_id,
+            send_signaling_cb=self._send_signaling_async,
+            on_audio_track_cb=self._on_audio_track,
+            on_video_track_cb=self._on_video_track,
+        )
+        
+        # Attach local camera and microphone to the WebRTC connection
+        self._webrtc.add_video_source(CameraVideoStreamTrack())
+        self._webrtc.add_audio_source(MicrophoneAudioTrack())
+
         # Inbound worker thread: translation + TTS (blocks on CPU-bound inference)
         inbound_thread = threading.Thread(target=self._inbound_worker, daemon=True)
         inbound_thread.start()
@@ -120,6 +143,14 @@ class SherpaClient:
         )
         stt_thread.start()
 
+        async def _do_call():
+            await asyncio.sleep(2.0)  # Give the websocket a moment to connect
+            self._ui.show_status("Initiating WebRTC Video/Audio Call...")
+            await self._webrtc.initiate_call()
+            
+        if self._initiate_call:
+            asyncio.create_task(_do_call())
+
         self._ui.show_status(
             f"Session ready  |  you speak: {self._input_lang}  "
             f"|  you hear: {self._output_lang}  "
@@ -129,10 +160,14 @@ class SherpaClient:
 
         try:
             # connect() blocks until disconnected / reconnect budget exhausted
-            await self._transport.connect(self._on_remote_message)
+            await self._transport.connect(self._on_remote_message, self._on_remote_signaling)
         finally:
             self._running = False
             stt.stop()
+            self._video_ui.stop()
+            self._audio_receiver.stop()
+            if self._webrtc:
+                await self._webrtc.close()
 
     # ------------------------------------------------------------------
     # Outbound: STT callback → network
@@ -201,6 +236,35 @@ class SherpaClient:
         self._inbound_queue.put_nowait(event)
 
     # ------------------------------------------------------------------
+    # WebRTC Callbacks
+    # ------------------------------------------------------------------
+
+    async def _send_signaling_async(self, event: SignalingEvent) -> None:
+        """Send WebRTC signaling via the WebSocket transport."""
+        await self._transport.send(event)
+
+    def _on_remote_signaling(self, event: SignalingEvent) -> None:
+        """Handle incoming WebRTC signaling (runs on asyncio loop)."""
+        if self._loop and self._running and self._webrtc:
+            asyncio.run_coroutine_threadsafe(
+                self._webrtc.handle_signaling_event(event), self._loop
+            )
+
+    def _on_audio_track(self, track) -> None:
+        logger.info("🎙️ Receiving remote WebRTC audio track!")
+        if self._loop and self._running:
+            asyncio.run_coroutine_threadsafe(
+                self._audio_receiver.consume_audio_track(track), self._loop
+            )
+
+    def _on_video_track(self, track) -> None:
+        logger.info("📹 Receiving remote WebRTC video track!")
+        if self._loop and self._running:
+            asyncio.run_coroutine_threadsafe(
+                self._video_ui.consume_video_track(track), self._loop
+            )
+
+    # ------------------------------------------------------------------
     # Inbound worker thread: translation + TTS
     # ------------------------------------------------------------------
 
@@ -231,6 +295,9 @@ class SherpaClient:
                 translated = event.text
 
             self._ui.show_remote_translated(event.speaker_id, translated, self._output_lang)
+            
+            # Overlay the translated text on the remote video feed
+            self._video_ui.update_text(translated)
 
             # Record in history
             self._ui.record(

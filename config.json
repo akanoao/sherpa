@@ -51,7 +51,7 @@
       "engine": "sherpa_onnx",
       "model": "./models/vits-icefall-en_US-ljspeech-medium/model.onnx",
       "tokens": "./models/vits-icefall-en_US-ljspeech-medium/tokens.txt",
-      "data_dir": "",
+      "data_dir": "./models/vits-icefall-en_US-ljspeech-medium",
       "speaker_id": 0,
       "provider": "cpu",
       "num_threads": 2
@@ -61,7 +61,7 @@
       "engine": "sherpa_onnx",
       "model": "./models/vits-piper-hi_IN-priyamvada-medium/hi_IN-priyamvada-medium.onnx",
       "tokens": "./models/vits-piper-hi_IN-priyamvada-medium/tokens.txt",
-      "data_dir": "",
+      "data_dir": "./models/vits-piper-hi_IN-priyamvada-medium",
       "speaker_id": 0,
       "provider": "cpu",
       "num_threads": 2
@@ -71,7 +71,7 @@
       "engine": "sherpa_onnx",
       "model": "./models/vits-zh-hf-fanchen-C/vits-zh-hf-fanchen-C.onnx",
       "tokens": "./models/vits-zh-hf-fanchen-C/tokens.txt",
-      "data_dir": "",
+      "data_dir": "./models/vits-zh-hf-fanchen-C",
       "speaker_id": 0,
       "provider": "cpu",
       "num_threads": 2
@@ -84,7 +84,7 @@
     "engine": "argos",
 
     "_comment_ctranslate2": "Used only when engine = 'ctranslate2'",
-    "models_dir": "./models/ct2",
+    "models_dir": "./models/nllb",
     "device": "cpu",
     "inter_threads": 1,
     "pivot_lang": "en",

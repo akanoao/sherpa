@@ -112,6 +112,9 @@ class CTranslate2TranslationProvider:
         if not text.strip() or source_lang == target_lang:
             return text
 
+        # Normalize text to sentence-case to prevent tokenization issues with ALL CAPS input
+        text = text.capitalize()
+
         # 1. Direct MarianMT pair
         direct = self._marian_dir(source_lang, target_lang)
         if direct:
@@ -188,10 +191,11 @@ class CTranslate2TranslationProvider:
 
     def _load_nllb(self, model_dir: str):
         if model_dir not in self._translators:
-            from transformers import NllbTokenizer
+            from transformers import AutoTokenizer
 
             translator = self._make_translator(model_dir)
-            tokenizer = NllbTokenizer.from_pretrained(model_dir)
+            # Pull tokenizer from the original Facebook model as it shares the exact vocabulary
+            tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
             self._translators[model_dir] = translator
             self._tokenizers[model_dir] = tokenizer
         return self._translators[model_dir], self._tokenizers[model_dir]
@@ -216,17 +220,23 @@ class CTranslate2TranslationProvider:
             src_code = NLLB_LANG_MAP.get(src, src)
             tgt_code = NLLB_LANG_MAP.get(tgt, tgt)
             translator, tokenizer = self._load_nllb(model_dir)
+            
+            # Tell the tokenizer what language we are starting with
             tokenizer.src_lang = src_code
-            tokens = tokenizer.convert_ids_to_tokens(
-                tokenizer.encode(text, add_special_tokens=True)
-            )
-            tgt_prefix = [tokenizer.lang_code_to_id[tgt_code]]
+            
+            # Break the text down into AI tokens
+            tokens = tokenizer.convert_ids_to_tokens(tokenizer.encode(text))
+            
+            # Run the fast C++ translation engine
             results = translator.translate_batch(
                 [tokens],
-                target_prefix=[tgt_prefix],
+                target_prefix=[[tgt_code]],
             )
-            output_ids = tokenizer.convert_tokens_to_ids(results[0].hypotheses[0])
-            return tokenizer.decode(output_ids, skip_special_tokens=True)
+            
+            # Grab the output tokens (ignoring the first token, which is just the language tag)
+            target_tokens = results[0].hypotheses[0][1:]
+            output_ids = tokenizer.convert_tokens_to_ids(target_tokens)
+            return tokenizer.decode(output_ids)
         except Exception as exc:
             logger.warning("CTranslate2 NLLB %s→%s failed: %s", src, tgt, exc)
             return text

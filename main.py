@@ -84,6 +84,7 @@ def cmd_talk(args: argparse.Namespace) -> None:
         tts_enabled=not args.no_tts,
         show_original=not args.no_original,
         tts_speed=args.tts_speed,
+        initiate_call=args.call,
     )
 
     try:
@@ -206,6 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=1.0,
         metavar="SPEED",
         help="TTS playback speed multiplier (default: 1.0)",
+    )
+    p_talk.add_argument(
+        "--call",
+        action="store_true",
+        help="Initiate the WebRTC video/audio call upon connecting",
     )
     p_talk.set_defaults(func=cmd_talk)
 

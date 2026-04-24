@@ -12,17 +12,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Callable
 
-from ..core.packet import TextEvent
+from ..core.packet import TextEvent, SignalingEvent
 
 # Callback type: called whenever a TextEvent arrives from a peer.
 MessageCallback = Callable[[TextEvent], None]
+SignalingCallback = Callable[[SignalingEvent], None]
 
 
 class TransportBase(ABC):
     """Abstract network transport for TextEvent messages."""
 
     @abstractmethod
-    async def connect(self, on_message: MessageCallback) -> None:
+    async def connect(self, on_message: MessageCallback, on_signaling: SignalingCallback = None) -> None:
         """
         Connect to the relay and start processing messages.
 
