@@ -1,4 +1,4 @@
-# SherpaConnect 🎙️🌐
+# ROM2 🎙️🌐
 
 Real-time, fully-offline, multilingual two-way voice communication.
 
