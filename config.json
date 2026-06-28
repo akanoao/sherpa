@@ -79,15 +79,14 @@
   },
 
   "translation": {
-    "_comment": "engine: 'argos' (easiest, pip install argostranslate) or 'ctranslate2' (faster, needs model conversion).",
+    "_comment": "NLLB translation runs fully offline with a local CTranslate2 model and tokenizer.",
 
-    "engine": "argos",
+    "engine": "nllb",
 
-    "_comment_ctranslate2": "Used only when engine = 'ctranslate2'",
-    "models_dir": "./models/nllb",
+    "models_dir": "./models",
     "device": "cpu",
     "inter_threads": 1,
-    "pivot_lang": "en",
-    "nllb_dir": "nllb-200-distilled-600M"
+    "nllb_dir": "nllb",
+    "tokenizer_dir": "./models/nllb-tokenizer"
   }
 }

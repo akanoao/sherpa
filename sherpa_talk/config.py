@@ -18,7 +18,10 @@ _DEFAULTS: dict = {
     "stt": {},
     "tts": {},
     "translation": {
-        "engine": "argos",
+        "engine": "nllb",
+        "models_dir": "./models",
+        "nllb_dir": "nllb",
+        "tokenizer_dir": "./models/nllb-tokenizer",
     },
 }
 

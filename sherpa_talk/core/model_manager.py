@@ -17,7 +17,7 @@ Config schema (abbreviated)
         "<lang>": { "engine": "sherpa_onnx", ...engine-specific keys }
       },
       "translation": {
-        "engine": "argos" | "ctranslate2",
+        "engine": "nllb",
         ...engine-specific keys
       }
     }
@@ -120,16 +120,14 @@ class ModelManager:
 
     def _build_translation(self):
         trans_cfg = self._config.get("translation", {})
-        engine = trans_cfg.get("engine", "argos")
+        engine = trans_cfg.get("engine", "nllb")
 
-        if engine == "argos":
-            from .translation.argos_provider import ArgosTranslationProvider
-
-            return ArgosTranslationProvider(trans_cfg)
-
-        if engine == "ctranslate2":
+        if engine in {"nllb", "ctranslate2"}:
             from .translation.ctranslate2_provider import CTranslate2TranslationProvider
 
             return CTranslate2TranslationProvider(trans_cfg)
 
-        raise ValueError(f"Unknown translation engine: {engine!r}")
+        raise ValueError(
+            f"Unknown translation engine: {engine!r}. "
+            "This build supports only the local NLLB/CTranslate2 engine."
+        )

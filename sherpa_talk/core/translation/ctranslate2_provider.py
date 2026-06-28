@@ -1,50 +1,19 @@
-"""
-CTranslate2 translation provider (production-grade, fast CPU/GPU inference).
+"""NLLB translation provider backed by CTranslate2.
 
-Uses locally converted MarianMT / OPUS-MT models (Helsinki-NLP) for direct
-language pairs and NLLB-200-distilled-600M as a broad multilingual fallback.
-
-Model conversion (one-time, offline)
--------------------------------------
-Install the conversion tool::
-
-    pip install ctranslate2 transformers sentencepiece
-
-Convert a MarianMT model::
-
-    ct2-opus-mt-converter --model Helsinki-NLP/opus-mt-en-hi \\
-        --output_dir ./models/opus-mt-en-hi --quantization int8
-
-Convert the NLLB model::
-
-    ct2-transformers-converter --model facebook/nllb-200-distilled-600M \\
-        --output_dir ./models/nllb-200-distilled-600M --quantization int8 --force
-
-Config dict keys
-----------------
-models_dir    : base directory that contains converted model sub-directories
-device        : "cpu" | "cuda"  (default "cpu")
-inter_threads : int  (default 1)
-intra_threads : int  (default 0 = use all available cores)
-pivot_lang    : intermediate language for indirect pairs  (default "en")
-nllb_dir      : name / path of the NLLB model dir inside models_dir
-                (default "nllb-200-distilled-600M")
-
-NLLB language codes
---------------------
-NLLB uses FLORES-200 codes, not plain ISO-639-1 codes.  A small built-in
-mapping covers the most common languages; extend ``NLLB_LANG_MAP`` as needed.
+The app uses one local NLLB CTranslate2 model for all language pairs. Runtime
+translation is fully offline: both the CT2 model and the Hugging Face tokenizer
+must exist on disk before the provider is constructed.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Mapping from ISO-639-1 short code → FLORES-200 / NLLB tag
+# Mapping from ISO-639-1 short code to FLORES-200 / NLLB tag.
 NLLB_LANG_MAP: dict[str, str] = {
     "en": "eng_Latn",
     "hi": "hin_Deva",
@@ -80,96 +49,82 @@ NLLB_LANG_MAP: dict[str, str] = {
 
 
 class CTranslate2TranslationProvider:
-    """
-    CTranslate2 translation provider.
-
-    Strategy:
-    1. If a direct MarianMT model (``opus-mt-{src}-{tgt}``) exists in
-       *models_dir*, use it.
-    2. Else fall back to NLLB-200-distilled-600M (if available).
-    3. Else attempt English pivot: src→en, then en→tgt.
-    4. Return original text when nothing works.
-    """
+    """NLLB/CTranslate2 translation provider."""
 
     def __init__(self, config: dict) -> None:
         self._config = config
-        self._models_dir: str = config["models_dir"]
+        self._models_dir: str = config.get("models_dir", "./models")
         self._device: str = config.get("device", "cpu")
         self._inter_threads: int = config.get("inter_threads", 1)
         self._intra_threads: int = config.get("intra_threads", 0)
-        self._pivot_lang: str = config.get("pivot_lang", "en")
-        self._nllb_dir_name: str = config.get("nllb_dir", "nllb-200-distilled-600M")
+        self._nllb_dir_name: str = config.get("nllb_dir", "nllb")
+        self._tokenizer_dir: str = config.get("tokenizer_dir", "./models/nllb-tokenizer")
 
-        # Lazy-loaded caches: model_dir → (Translator, tokenizer)
-        self._translators: dict = {}
-        self._tokenizers: dict = {}
+        self._translators: dict[str, object] = {}
+        self._tokenizers: dict[str, object] = {}
 
-    # ------------------------------------------------------------------
-    # TranslationProvider interface
-    # ------------------------------------------------------------------
+        self._nllb_model_path = self._resolve_nllb_model_dir()
+        self._tokenizer_path = self._resolve_tokenizer_dir()
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        """Translate text through local NLLB, returning the original on inference failure."""
         if not text.strip() or source_lang == target_lang:
             return text
 
-        # Normalize text to sentence-case to prevent tokenization issues with ALL CAPS input
-        text = text.capitalize()
-
-        # 1. Direct MarianMT pair
-        direct = self._marian_dir(source_lang, target_lang)
-        if direct:
-            return self._marian_translate(text, direct, source_lang, target_lang)
-
-        # 2. NLLB fallback
-        nllb = self._nllb_model_dir()
-        if nllb:
-            return self._nllb_translate(text, nllb, source_lang, target_lang)
-
-        # 3. English pivot via MarianMT
-        if source_lang != "en" and target_lang != "en":
-            src_en = self._marian_dir(source_lang, "en")
-            en_tgt = self._marian_dir("en", target_lang)
-            if src_en and en_tgt:
-                intermediate = self._marian_translate(text, src_en, source_lang, "en")
-                return self._marian_translate(intermediate, en_tgt, "en", target_lang)
-
-        logger.warning(
-            "CTranslate2: no model found for %s→%s; returning original.",
+        normalized_text = text.capitalize()
+        return self._nllb_translate(
+            normalized_text,
+            self._nllb_model_path,
             source_lang,
             target_lang,
         )
-        return text
 
-    # ------------------------------------------------------------------
-    # Internal helpers – model discovery
-    # ------------------------------------------------------------------
+    def is_pair_supported(self, source_lang: str, target_lang: str) -> bool:
+        return source_lang in NLLB_LANG_MAP and target_lang in NLLB_LANG_MAP
 
-    def _marian_dir(self, src: str, tgt: str) -> Optional[str]:
-        """Return the path to a MarianMT CT2 model dir if it exists."""
-        candidates = [
-            f"opus-mt-{src}-{tgt}",
-            f"Helsinki-NLP-opus-mt-{src}-{tgt}",
+    def _resolve_nllb_model_dir(self) -> str:
+        configured = Path(self._nllb_dir_name).expanduser()
+        path = configured if configured.is_absolute() else Path(self._models_dir) / configured
+        path = path.resolve()
+
+        if not path.is_dir():
+            raise FileNotFoundError(
+                f"NLLB CTranslate2 model directory not found: {path}. "
+                "Run download_models.py or update translation.models_dir/nllb_dir."
+            )
+
+        missing = [name for name in ("model.bin", "config.json") if not (path / name).is_file()]
+        if missing:
+            raise FileNotFoundError(
+                f"NLLB CTranslate2 model directory is missing {missing}: {path}"
+            )
+
+        return str(path)
+
+    def _resolve_tokenizer_dir(self) -> str:
+        path = Path(self._tokenizer_dir).expanduser().resolve()
+        if not path.is_dir():
+            raise FileNotFoundError(
+                f"NLLB tokenizer directory not found: {path}. "
+                "Run download_models.py or update translation.tokenizer_dir."
+            )
+
+        missing = [
+            name
+            for name in ("tokenizer_config.json", "sentencepiece.bpe.model")
+            if not (path / name).is_file()
         ]
-        for name in candidates:
-            path = os.path.join(self._models_dir, name)
-            if os.path.isdir(path):
-                return path
-        return None
+        if missing:
+            raise FileNotFoundError(
+                f"NLLB tokenizer directory is missing {missing}: {path}"
+            )
 
-    def _nllb_model_dir(self) -> Optional[str]:
-        path = os.path.join(self._models_dir, self._nllb_dir_name)
-        return path if os.path.isdir(path) else None
-
-    # ------------------------------------------------------------------
-    # Internal helpers – translation
-    # ------------------------------------------------------------------
+        return str(path)
 
     def _intra_threads_arg(self) -> Optional[int]:
-        """Return the intra_threads value to pass to CTranslate2, or None to use the default."""
-        return self._intra_threads if self._intra_threads > 0 else None
+        return self._intra_threads if self._intra_threads > 0 else 0
 
     def _make_translator(self, model_dir: str):
-        """Create a CTranslate2 Translator instance (shared helper)."""
         import ctranslate2
 
         return ctranslate2.Translator(
@@ -179,64 +134,35 @@ class CTranslate2TranslationProvider:
             intra_threads=self._intra_threads_arg(),
         )
 
-    def _load_marian(self, model_dir: str):
-        if model_dir not in self._translators:
-            from transformers import MarianTokenizer
-
-            translator = self._make_translator(model_dir)
-            tokenizer = MarianTokenizer.from_pretrained(model_dir)
-            self._translators[model_dir] = translator
-            self._tokenizers[model_dir] = tokenizer
-        return self._translators[model_dir], self._tokenizers[model_dir]
-
     def _load_nllb(self, model_dir: str):
         if model_dir not in self._translators:
             from transformers import AutoTokenizer
 
             translator = self._make_translator(model_dir)
-            # Pull tokenizer from the original Facebook model as it shares the exact vocabulary
-            tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+            tokenizer = AutoTokenizer.from_pretrained(
+                self._tokenizer_path,
+                local_files_only=True,
+            )
             self._translators[model_dir] = translator
             self._tokenizers[model_dir] = tokenizer
         return self._translators[model_dir], self._tokenizers[model_dir]
 
-    def _marian_translate(
-        self, text: str, model_dir: str, src: str, tgt: str
-    ) -> str:
-        try:
-            translator, tokenizer = self._load_marian(model_dir)
-            tokens = tokenizer.convert_ids_to_tokens(tokenizer.encode(text))
-            results = translator.translate_batch([tokens])
-            output_ids = tokenizer.convert_tokens_to_ids(results[0].hypotheses[0])
-            return tokenizer.decode(output_ids, skip_special_tokens=True)
-        except Exception as exc:
-            logger.warning("CTranslate2 MarianMT %s→%s failed: %s", src, tgt, exc)
-            return text
-
-    def _nllb_translate(
-        self, text: str, model_dir: str, src: str, tgt: str
-    ) -> str:
+    def _nllb_translate(self, text: str, model_dir: str, src: str, tgt: str) -> str:
         try:
             src_code = NLLB_LANG_MAP.get(src, src)
             tgt_code = NLLB_LANG_MAP.get(tgt, tgt)
             translator, tokenizer = self._load_nllb(model_dir)
-            
-            # Tell the tokenizer what language we are starting with
+
             tokenizer.src_lang = src_code
-            
-            # Break the text down into AI tokens
             tokens = tokenizer.convert_ids_to_tokens(tokenizer.encode(text))
-            
-            # Run the fast C++ translation engine
             results = translator.translate_batch(
                 [tokens],
                 target_prefix=[[tgt_code]],
             )
-            
-            # Grab the output tokens (ignoring the first token, which is just the language tag)
+
             target_tokens = results[0].hypotheses[0][1:]
             output_ids = tokenizer.convert_tokens_to_ids(target_tokens)
-            return tokenizer.decode(output_ids)
+            return tokenizer.decode(output_ids, skip_special_tokens=True)
         except Exception as exc:
-            logger.warning("CTranslate2 NLLB %s→%s failed: %s", src, tgt, exc)
+            logger.warning("NLLB translation %s -> %s failed: %s", src, tgt, exc)
             return text
