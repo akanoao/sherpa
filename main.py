@@ -44,6 +44,13 @@ def cmd_talk(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     manager = ModelManager(config)
 
+    if args.webrtc_audio and not args.no_translation_pipeline:
+        print(
+            "Warning: WebRTC raw audio and the WebSocket translation pipeline "
+            "are both enabled. This can open the microphone for both WebRTC "
+            "and STT until a shared audio capture layer is added."
+        )
+
     speaker_id = args.speaker_id or str(uuid.uuid4())[:8]
     session_id = args.session or str(uuid.uuid4())[:8]
 
@@ -58,6 +65,9 @@ def cmd_talk(args: argparse.Namespace) -> None:
         show_original=not args.no_original,
         tts_speed=args.tts_speed,
         initiate_call=args.call,
+        translation_enabled=not args.no_translation_pipeline,
+        webrtc_video_enabled=args.webrtc_video,
+        webrtc_audio_enabled=args.webrtc_audio,
     )
 
     try:
@@ -144,7 +154,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_talk.add_argument(
         "--call",
         action="store_true",
-        help="Initiate the WebRTC video/audio call upon connecting",
+        help="Initiate the WebRTC media call upon connecting",
+    )
+    p_talk.add_argument(
+        "--webrtc-video",
+        action="store_true",
+        help="Enable the WebRTC video track",
+    )
+    p_talk.add_argument(
+        "--webrtc-audio",
+        action="store_true",
+        help="Enable the raw WebRTC audio track",
+    )
+    p_talk.add_argument(
+        "--no-translation-pipeline",
+        action="store_true",
+        help="Disable STT, translated text messages, and translated TTS over WebSocket",
     )
     p_talk.set_defaults(func=cmd_talk)
 
